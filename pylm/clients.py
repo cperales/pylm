@@ -18,6 +18,8 @@ from pylm.parts.core import zmq_context
 from pylm.parts.messages_pb2 import PalmMessage
 from threading import Thread
 from uuid import uuid4
+from itertools import islice
+from math import ceil
 import logging
 import time
 import zmq
@@ -118,7 +120,9 @@ class Client(object):
 
             socket.send(message.SerializeToString())
         
-    def job(self, function, generator, messages: int=sys.maxsize, cache: str=''):
+    def job(self, function, generator,
+            messages: int=sys.maxsize,
+            workers: int=1, cache: str=''):
         """
         Submit a job with multiple messages to a server.
 
@@ -127,6 +131,7 @@ class Client(object):
         :param payload: A generator that yields a series of binary messages.
         :param messages: Number of messages expected to be sent back to the
             client. Defaults to infinity (sys.maxsize)
+        :param workers: Number of workers, default 1:
         :param cache: Cache data included in the message
         :return: an iterator with the messages that are sent back to the client.
         """
@@ -144,20 +149,38 @@ class Client(object):
             # Pipelined job.
             function = ' '.join(function)
 
-        # Remember that sockets are not thread safe
-        sender_thread = Thread(target=self._sender,
-                               args=(push_socket, function, generator, cache))
+        # # Remember that sockets are not thread safe
+        # sender_thread = Thread(target=self._sender,
+        #                        args=(push_socket, function, generator, cache))
+        #
+        # # Sender runs in background.
+        # sender_thread.start()
 
-        # Sender runs in background.
-        sender_thread.start()
-
-        for i in range(messages):
+        prev_i = 0
+        print(type(messages), messages)
+        print(type(workers), workers)
+        message_list = list()
+        for i in range(0, messages, workers):
+            print('prev_i = ', i)
+            print('i = ', i + workers)
+            sub_generator = islice(generator, i, i + workers)
+            prev_i = i
+            # Remember that sockets are not thread safe
+            sender_thread = Thread(target=self._sender,
+                                   args=(push_socket, function, sub_generator, cache))
+            # Sender runs in background.
+            sender_thread.start()
+            # Process
             [client, message_data] = sub_socket.recv_multipart()
             if not client.decode('utf-8') == self.uuid:
                 raise ValueError('The client got a message that does not belong')
 
             message = PalmMessage()
             message.ParseFromString(message_data)
+            message_list.append(message)
+            print()
+
+        for message in message_list:
             yield message.payload
 
     def eval(self, function, payload: bytes, messages: int=1, cache: str=''):
