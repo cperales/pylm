@@ -118,7 +118,79 @@ class Client(object):
                 message.cache = cache
 
             socket.send(message.SerializeToString())
-        
+
+    def job_list(self,
+                 function,
+                 list_generator,
+                 messages: int=sys.maxsize,
+                 workers: int=sys.maxsize,
+                 cache: str=''):
+        """
+        Submit a job with multiple messages to a server.
+
+        :param function: Sting or list of strings following the format
+            ``server.function``.
+        :param payload: A generator that yields a series of binary messages.
+        :param messages: Number of messages expected to be sent back to the
+            client. Defaults to infinity (sys.maxsize)
+        :param list_generator: List generator.
+        :param workers: Number of workers, default 1:
+        :param cache: Cache data included in the message
+        :return: an iterator with the messages that are sent back to the client.
+        """
+        def _generator_from_list(a_list):
+            """
+            Stupid function to create a
+            generator from list.
+
+            :param some_list:
+            :return: a generator.
+            """
+            for element in a_list:
+                yield element
+
+        push_socket = zmq_context.socket(zmq.PUSH)
+        push_socket.connect(self.push_address)
+
+        sub_socket = zmq_context.socket(zmq.SUB)
+        sub_socket.setsockopt_string(zmq.SUBSCRIBE, self.uuid)
+        sub_socket.connect(self.sub_address)
+
+        if type(function) == str:
+            # Single-stage job
+            pass
+        elif type(function) == list:
+            # Pipelined job.
+            function = ' '.join(function)
+
+        message_list = list()
+        if messages != sys.maxsize:
+            self.logger.debug('There are {} messages'.format(messages))
+        if workers != sys.maxsize:
+            self.logger.debug('There are {} workers'.format(workers))
+        self.logger.debug('Sending jobs to workers')
+        for i in range(0, messages, workers):
+            self.logger.debug('JSON from {} to {}'.format(i, i + workers))
+            sub_list_generator = list_generator[i:i + workers]
+            # Remember that sockets are not thread safe
+            sub_generator = _generator_from_list(sub_list_generator)
+            sender_thread = Thread(target=self._sender,
+                                   args=(push_socket, function, sub_generator, cache))
+            # Sender runs in background.
+            sender_thread.start()
+            # Process
+            [client, message_data] = sub_socket.recv_multipart()
+            if not client.decode('utf-8') == self.uuid:
+                raise ValueError('The client got a message that does not belong')
+
+            message = PalmMessage()
+            message.ParseFromString(message_data)
+            message_list.append(message)
+
+        self.logger.info('Job done! Now returning messages...')
+        for message in message_list:
+            yield message.payload
+
     def job(self,
             function,
             generator,
