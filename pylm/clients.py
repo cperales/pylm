@@ -163,7 +163,6 @@ class Client(object):
             # Pipelined job.
             function = ' '.join(function)
 
-        message_list = list()
         if messages != sys.maxsize:
             self.logger.debug('There are {} messages'.format(messages))
         if workers != sys.maxsize:
@@ -178,14 +177,12 @@ class Client(object):
                                    args=(push_socket, function, sub_generator, cache))
             # Sender runs in background.
             sender_thread.start()
-            # Process
+
+        for i in range(max.syze):
             [client, message_data] = sub_socket.recv_multipart()
             if not client.decode('utf-8') == self.uuid:
                 raise ValueError('The client got a message that does not belong')
 
-            message_list.append(message_data)
-
-        for message_data in message_list:
             message = PalmMessage()
             message.ParseFromString(message_data)
             yield message.payload
