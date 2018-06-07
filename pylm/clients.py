@@ -178,14 +178,17 @@ class Client(object):
             # Sender runs in background.
             sender_thread.start()
 
-        for i in range(max.syze):
+        for i in range(sys.maxsize):
             [client, message_data] = sub_socket.recv_multipart()
             if not client.decode('utf-8') == self.uuid:
                 raise ValueError('The client got a message that does not belong')
 
             message = PalmMessage()
             message.ParseFromString(message_data)
-            yield message.payload
+            if i == messages - 1:
+                return message.payload
+            else:
+                yield message.payload
 
     def job(self, function, generator, messages: int=sys.maxsize, cache: str=''):
         """
