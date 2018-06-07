@@ -170,7 +170,7 @@ class Client(object):
             self.logger.debug('There are {} workers'.format(workers))
         self.logger.debug('Sending jobs to workers')
         for i in range(0, messages, workers):
-            self.logger.debug('JSON from {} to {}'.format(i, i + workers))
+            self.logger.debug('JSONs from {} to {}'.format(i, i + workers))
             sub_list_generator = list_generator[i:i + workers]
             # Remember that sockets are not thread safe
             sub_generator = _generator_from_list(sub_list_generator)
